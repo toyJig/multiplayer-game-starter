@@ -16,16 +16,24 @@ app.get('/', (req, res) => {
 
 
 const backendPlayers = {}
+const backendProjectiles = {}
+
+let projectileId = 0
 
 io.on('connection', (socket) => {
   console.log('a user connected')
   backendPlayers[socket.id] = {
     x: 500*Math.random(),
     y: 500*Math.random(),
-    radius: 10*Math.random()+5,
+    radius: 10,
     color: `hsl(${360*Math.random()}, 100%, 50%)`,
-    sequenceNumber: 0
+    sequenceNumber: 0,
+    hp: 100
   }
+
+  socket.on('emitCanvas', ({width, height}) => {
+    backendPlayers[socket.id].canvas = {width, height}
+  })
 
   socket.on('disconnect', (reason) =>{
     console.log(reason)
@@ -34,7 +42,6 @@ io.on('connection', (socket) => {
   })
 
   io.emit('updatePlayers', backendPlayers)
-  console.log(backendPlayers)
 
   const PLAYER_SPEED = 5
   socket.on('keydown', ({keycode, sequenceNumber}) => {
@@ -53,13 +60,49 @@ io.on('connection', (socket) => {
         backendPlayers[socket.id].x+=PLAYER_SPEED
         break
     }
-    console.log(backendPlayers)
+  })
+  socket.on('shoot', ({x, y, angle}) => {
+    projectileId++
+    const velocity = {
+      x: Math.cos(angle) * 5,
+      y: Math.sin(angle) * 5
+    }
+    backendProjectiles[projectileId] = {x, y, velocity, radius:5, playerId: socket.id}
   })
 })
 
  
 
 setInterval(()=>{
+  //update and then emit projectile data
+  for (const id in backendProjectiles) {
+    const backendProjectile = backendProjectiles[id] 
+    const backendPlayer = backendPlayers[backendProjectile.playerId]
+    backendProjectile.x += backendProjectile.velocity.x
+    backendProjectile.y += backendProjectile.velocity.y
+    const PROJECTILE_SIZE = 5
+    for (const playerId in backendPlayers) {
+      if ((backendProjectile.playerId != playerId) && (Math.sqrt(Math.pow(backendProjectile.x-backendPlayers[playerId].x, 2) + Math.pow(backendProjectile.y-backendPlayers[playerId].y, 2)) < backendProjectile.radius+backendPlayers[playerId].radius)){
+        backendPlayers[playerId].hp-=20
+        if (backendPlayers[playerId].hp <= 0) {
+          backendPlayers[playerId].x = 500*Math.random()
+          backendPlayers[playerId].y = 500*Math.random()
+          backendPlayers[playerId].hp = 100
+          io.emit('death', backendPlayers[playerId], playerId)
+        }
+        delete backendProjectiles[id]
+    continue
+      }
+    }
+    if (backendProjectile.x - PROJECTILE_SIZE >= backendPlayer?.canvas.width || 
+      backendProjectile.y - PROJECTILE_SIZE >= backendPlayer?.canvas.height || 
+      backendProjectile.x + PROJECTILE_SIZE <= 0 || 
+      backendProjectile.y + PROJECTILE_SIZE <= 0)  
+    {
+      delete backendProjectiles[id]
+    }
+  }
+  io.emit('updateProjectiles', backendProjectiles) 
   io.emit('updatePlayers', backendPlayers)
 }, 15)
 
