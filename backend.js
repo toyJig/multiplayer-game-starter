@@ -1,4 +1,5 @@
 const PLAYER_SPEED = 5
+const BULLET_SPEED = 5
 const ARENA_SIZE = 800
 
 const { time } = require('console')
@@ -80,8 +81,8 @@ io.on('connection', (socket) => {
   socket.on('shoot', ({x, y, angle}) => {
     projectileId++
     const velocity = {
-      x: Math.cos(angle) * 5,
-      y: Math.sin(angle) * 5
+      x: Math.cos(angle) * BULLET_SPEED,
+      y: Math.sin(angle) * BULLET_SPEED
     }
     backendProjectiles[projectileId] = {x, y, velocity, radius:5, playerId: socket.id}
   })
