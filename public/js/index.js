@@ -1,3 +1,6 @@
+const PLAYER_SPEED = 5
+const ARENA_SIZE = 800
+
 const canvas = document.querySelector('canvas')
 const c = canvas.getContext('2d')
 
@@ -17,10 +20,6 @@ addEventListener('onresize', () => {
 
 const frontEndPlayers = {}
 const frontEndProjectiles = {}
-
-socket.on('connect', () => {
-  socket.emit('emitCanvas', { width: canvas.width, height: canvas.height })
-})
 
 socket.on('updateProjectiles', (backendProjectiles) => {
   for (const id in backendProjectiles) {
@@ -55,9 +54,31 @@ socket.on('updatePlayers', (backendPlayers) => {
         y: backendPlayer.y,
         radius: backendPlayer.radius,
         color: backendPlayer.color,
-        hp: backendPlayer.hp
+        hp: backendPlayer.hp,
+        score: backendPlayer.score
       })
-    } else { // if there is a player then update its position
+
+      document.querySelector('#playerLabels').innerHTML += `<div data-id='${id}' data-score='${backendPlayer.score}'>${backendPlayer.username}: ${backendPlayer.score}</div>`
+    } else { // if there is a player then update it
+      document.querySelector(`div[data-id="${id}"]`).innerHTML = `${backendPlayer.username}: ${backendPlayer.score}` 
+      document.querySelector(`div[data-id="${id}"]`).setAttribute('data-score', backendPlayer.score)
+
+      const parentDiv = document.querySelector('#playerLabels')
+      const childDivs = Array.from(parentDiv.querySelectorAll('div'))
+      childDivs.sort((a,b)=>{
+        const scoreA = Number(a.getAttribute('data-score'))
+        const scoreB = Number(b.getAttribute('data-score'))
+        return scoreB - scoreA
+      })
+      //remove old divs out of order
+      childDivs.forEach(div =>{
+        parentDiv.removeChild(div)
+      })
+      //appends new divs in sorted order
+      childDivs.forEach(div =>{
+        parentDiv.appendChild(div)
+      })
+
       //do server reconciliation if it is your player
       if (id === socket.id) {
         frontEndPlayers[id].x = backendPlayer.x
@@ -89,14 +110,17 @@ socket.on('updatePlayers', (backendPlayers) => {
   //deletes player if frontend has it but recieved backend info doesn't
   for (const id in frontEndPlayers) {
     if (!backendPlayers[id]) {
+      const divToDelete = document.querySelector(`div[data-id="${id}"]`)
+      divToDelete.parentNode.removeChild(divToDelete)
       delete frontEndPlayers[id]
     }
   }
 })
 
 socket.on('death', (player, playerId) => {
-  frontEndPlayers[playerId].x = player.x
-  frontEndPlayers[playerId].y = player.y
+  if (playerId == socket.id){
+    document.querySelector("#usernameInputForm").style.display = "initial"
+  }
 })
 
 let animationId
@@ -122,34 +146,40 @@ const keys = {
   s: false,
   d: false
 }
-const PLAYER_SPEED = 5
 const PlayerInputs = []
 let sequenceNumber = 0
 
 setInterval(() => {
-  if (keys.w) {
-    frontEndPlayers[socket.id].y -= PLAYER_SPEED
+  if (frontEndPlayers[socket.id]){
+    const player = frontEndPlayers[socket.id]
     sequenceNumber++
-    PlayerInputs.push({ sequenceNumber, dx: 0, dy: -PLAYER_SPEED })
-    socket.emit('keydown', { keycode: 'KeyW', sequenceNumber })
-  }
-  if (keys.a) {
-    frontEndPlayers[socket.id].x -= PLAYER_SPEED
-    sequenceNumber++
-    PlayerInputs.push({ sequenceNumber, dx: -PLAYER_SPEED, dy: 0 })
-    socket.emit('keydown', { keycode: 'KeyA', sequenceNumber })
-  }
-  if (keys.s) {
-    frontEndPlayers[socket.id].y += PLAYER_SPEED
-    sequenceNumber++
-    PlayerInputs.push({ sequenceNumber, dx: 0, dy: PLAYER_SPEED })
-    socket.emit('keydown', { keycode: 'KeyS', sequenceNumber })
-  }
-  if (keys.d) {
-    frontEndPlayers[socket.id].x += PLAYER_SPEED
-    sequenceNumber++
-    PlayerInputs.push({ sequenceNumber, dx: PLAYER_SPEED, dy: 0 })
-    socket.emit('keydown', { keycode: 'KeyD', sequenceNumber })
+    PlayerInputs.push({sequenceNumber, dx: 0, dy: 0})
+    const index = PlayerInputs.length-1
+    socket.emit('keydown', { keys, sequenceNumber })
+    if (keys.w){
+      PlayerInputs[index].dy-=PLAYER_SPEED
+    }
+    if (keys.a){
+      PlayerInputs[index].dx-=PLAYER_SPEED
+    }
+    if (keys.s){
+      PlayerInputs[index].dy+=PLAYER_SPEED
+    }
+    if (keys.d){
+        PlayerInputs[index].dx+=PLAYER_SPEED
+    }        
+    if (PlayerInputs[index].dx !=0 && PlayerInputs[index].dy != 0){
+      PlayerInputs[index].dx /= Math.sqrt(2)
+      PlayerInputs[index].dy /= Math.sqrt(2)
+    }
+    if (player.x + PlayerInputs[index].dx >= ARENA_SIZE || player.x + PlayerInputs[index].dx <= 0){
+      PlayerInputs[index].dx = 0
+    }
+    if (player.y  + PlayerInputs[index].dy >= ARENA_SIZE || player.y + PlayerInputs[index].dy  <= 0){
+      PlayerInputs[index].dy = 0
+    }
+    player.y += PlayerInputs[index].dy
+    player.x += PlayerInputs[index].dx
   }
 }, 15);
 
@@ -187,4 +217,10 @@ window.addEventListener('keyup', (event) => {
       keys.d = false
       break
   }
+})
+
+document.querySelector("#usernameInputForm").addEventListener(("submit"), (event) => {
+  event.preventDefault()
+  document.querySelector("#usernameInputForm").style.display = "none"
+  socket.emit("init", {width: canvas.width, height: canvas.height, devicePixelRatio, username: document.querySelector("#username").value})
 })

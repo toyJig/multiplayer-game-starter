@@ -1,3 +1,7 @@
+const PLAYER_SPEED = 5
+const ARENA_SIZE = 800
+
+const { time } = require('console')
 const express = require('express')
 const app = express()
 const http = require('http')
@@ -21,44 +25,56 @@ const backendProjectiles = {}
 let projectileId = 0
 
 io.on('connection', (socket) => {
-  console.log('a user connected')
-  backendPlayers[socket.id] = {
-    x: 500*Math.random(),
-    y: 500*Math.random(),
-    radius: 10,
-    color: `hsl(${360*Math.random()}, 100%, 50%)`,
-    sequenceNumber: 0,
-    hp: 100
-  }
+  console.log(`a user connected at ${new Date().toJSON().slice(0,10).replace(/-/g,'/')}`)
+  socket.on('init', ({width, height, devicePixelRatio, username}) => {
+    backendPlayers[socket.id] = {
+      x: 500*Math.random(),
+      y: 500*Math.random(),
+      radius: 10,
+      color: `hsl(${360*Math.random()}, 100%, 50%)`,
+      sequenceNumber: 0,
+      hp: 100,
+      score: 0,
+      canvas: {width, height, devicePixelRatio},
+      username
+    }
+    socket.on('disconnect', (reason) =>{
+      console.log(reason)
+      delete backendPlayers[socket.id]
+      io.emit('updatePlayers', backendPlayers)
+    })
 
-  socket.on('emitCanvas', ({width, height}) => {
-    backendPlayers[socket.id].canvas = {width, height}
-  })
-
-  socket.on('disconnect', (reason) =>{
-    console.log(reason)
-    delete backendPlayers[socket.id]
     io.emit('updatePlayers', backendPlayers)
   })
-
-  io.emit('updatePlayers', backendPlayers)
-
-  const PLAYER_SPEED = 5
-  socket.on('keydown', ({keycode, sequenceNumber}) => {
-    backendPlayers[socket.id].sequenceNumber = sequenceNumber
-    switch(keycode){
-      case 'KeyW':
-        backendPlayers[socket.id].y-=PLAYER_SPEED
-        break
-      case 'KeyA':
-        backendPlayers[socket.id].x-=PLAYER_SPEED
-        break
-      case 'KeyS':
-        backendPlayers[socket.id].y+=PLAYER_SPEED
-        break
-      case 'KeyD':
-        backendPlayers[socket.id].x+=PLAYER_SPEED
-        break
+  socket.on('keydown', ({keys, sequenceNumber}) => {
+     if (backendPlayers[socket.id]){
+      const player = backendPlayers[socket.id]
+      backendPlayers[socket.id].sequenceNumber = sequenceNumber
+      const movementRef = {dx: 0, dy: 0}
+      if (keys.w){
+        movementRef.dy-=PLAYER_SPEED
+      }
+      if (keys.a){
+        movementRef.dx-=PLAYER_SPEED
+      }
+      if (keys.s){
+        movementRef.dy+=PLAYER_SPEED
+      }
+      if (keys.d){
+          movementRef.dx+=PLAYER_SPEED
+      }  
+      if (movementRef.dx !=0 && movementRef.dy != 0){
+        movementRef.dx /= Math.sqrt(2)
+        movementRef.dy /= Math.sqrt(2)
+      }
+      if (player.x + movementRef.dx >= ARENA_SIZE || player.x  + movementRef.dx <= 0){
+        movementRef.dx = 0
+      }
+      if (player.y + movementRef.dy >= ARENA_SIZE || player.y + movementRef.dy  <= 0){
+        movementRef.dy = 0
+      }
+      player.x+=movementRef.dx
+      player.y+=movementRef.dy
     }
   })
   socket.on('shoot', ({x, y, angle}) => {
@@ -84,18 +100,22 @@ setInterval(()=>{
     for (const playerId in backendPlayers) {
       if ((backendProjectile.playerId != playerId) && (Math.sqrt(Math.pow(backendProjectile.x-backendPlayers[playerId].x, 2) + Math.pow(backendProjectile.y-backendPlayers[playerId].y, 2)) < backendProjectile.radius+backendPlayers[playerId].radius)){
         backendPlayers[playerId].hp-=20
+        if (backendPlayers[backendProjectile.playerId]){
+          backendPlayers[backendProjectile.playerId].score+=10
+        }
         if (backendPlayers[playerId].hp <= 0) {
-          backendPlayers[playerId].x = 500*Math.random()
-          backendPlayers[playerId].y = 500*Math.random()
-          backendPlayers[playerId].hp = 100
+          // backendPlayers[playerId].x = 500*Math.random()
+          // backendPlayers[playerId].y = 500*Math.random()
+          // backendPlayers[playerId].hp = 100
+          delete backendPlayers[playerId]
           io.emit('death', backendPlayers[playerId], playerId)
         }
         delete backendProjectiles[id]
     continue
       }
     }
-    if (backendProjectile.x - PROJECTILE_SIZE >= backendPlayer?.canvas.width || 
-      backendProjectile.y - PROJECTILE_SIZE >= backendPlayer?.canvas.height || 
+    if (backendProjectile.x - PROJECTILE_SIZE >= ARENA_SIZE || 
+      backendProjectile.y - PROJECTILE_SIZE >= ARENA_SIZE || 
       backendProjectile.x + PROJECTILE_SIZE <= 0 || 
       backendProjectile.y + PROJECTILE_SIZE <= 0)  
     {
